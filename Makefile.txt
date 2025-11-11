@@ -1,0 +1,38 @@
+# Variables
+PROJECT_ID=entregas-476319
+REGION=southamerica-east1
+REPO=bot-entregas-repo
+IMAGE_NAME=bot-entregas
+SERVICE_NAME=bot-entregas
+DBPASS?=tu_password_segura
+
+# Comando: make build
+build:
+	gcloud builds submit --tag $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(REPO)/$(IMAGE_NAME)
+
+# Comando: make deploy
+deploy:
+	gcloud run deploy $(SERVICE_NAME) \
+		--image $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(REPO)/$(IMAGE_NAME) \
+		--platform managed \
+		--region $(REGION) \
+		--set-env-vars DB_SOCKET=/cloudsql/$(PROJECT_ID):$(REGION):entregas-db,DB_USER=bot_entregas,DB_PASS=$(DBPASS),DB_NAME=entregas-db,TWILIO_SID=ACeb8fc0ede5a0ddd674c616211ba82ec4,TWILIO_AUTH=f748f0b0801035cd4273f12b31da095c,TWILIO_NUMBER=whatsapp:+59899953871 \
+		--add-cloudsql-instances $(PROJECT_ID):$(REGION):entregas-db \
+		--allow-unauthenticated
+
+# Comando: make health
+health:
+	bash healthcheck.sh
+
+# Comando: make clean
+clean:
+	find . -name '__pycache__' -exec rm -r {} +
+	find . -name '*.pyc' -delete
+
+# Comando: make lint
+lint:
+	flake8 main.py config.py --max-line-length=100
+
+# Comando: make test
+test:
+	pytest tests/
