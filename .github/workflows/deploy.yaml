@@ -1,0 +1,39 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Autenticación con Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: entregas-476319
+
+      - name: Build y push de imagen
+        run: |
+          gcloud builds submit --tag southamerica-east1-docker.pkg.dev/entregas-476319/bot-entregas-repo/bot-entregas
+
+      - name: Desplegar en Cloud Run
+        run: |
+          gcloud run deploy bot-entregas \
+            --image=southamerica-east1-docker.pkg.dev/entregas-476319/bot-entregas-repo/bot-entregas \
+            --region=southamerica-east1 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --add-cloudsql-instances=entregas-476319:southamerica-east1:entregas-db \
+            --set-env-vars=ENVIRONMENT=production,DB_SOCKET=/cloudsql/entregas-476319:southamerica-east1:entregas-db,DB_USER=bot_entregas,DB_PASS=${{ secrets.DB_PASS }},DB_NAME=entregas-db,TWILIO_SID=${{ secrets.TWILIO_SID }},TWILIO_AUTH=${{ secrets.TWILIO_AUTH }},TWILIO_NUMBER=${{ secrets.TWILIO_NUMBER }},LOG_FILE=logs.jsonl,LOG_LEVEL=INFO,MAX_PAYLOAD_SIZE=5120
