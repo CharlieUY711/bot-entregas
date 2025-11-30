@@ -9,19 +9,16 @@ env:
   REGION: "southamerica-east1"
   REPO: "entregas-repo"
   SERVICE: "bot-entregas"
-  IMAGE: "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/backend-v1"
 
 jobs:
   deploy:
-    name: Build & Deploy
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Cloud SDK
+      - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
@@ -34,24 +31,22 @@ jobs:
             --repository-format=docker \
             --location=$REGION || true
 
-      - name: Build & Push Image
+      - name: Build Docker Image
         run: |
-          gcloud builds submit --tag $IMAGE
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend-v1"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          gcloud builds submit --tag "$IMAGE"
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE \
-            --image $IMAGE \
+            --image "$IMAGE" \
             --platform=managed \
             --region=$REGION \
             --allow-unauthenticated \
-            --port=8080 \
-            --memory=1Gi \
-            --cpu=1 \
-            --timeout=300
+            --port=8080
 
       - name: Print Service URL
         run: |
           URL=$(gcloud run services describe $SERVICE --region=$REGION --format="value(status.url)")
           echo "### URL FINAL DEL BACKEND: $URL" >> $GITHUB_STEP_SUMMARY
-          echo "Deploy completado correctamente."
