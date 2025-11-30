@@ -33,19 +33,19 @@ jobs:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
 
     # -------------------------------------------------------------
-    # 3) Instalar gcloud
+    # 3) Setup gcloud
     # -------------------------------------------------------------
-    - name: Setup gcloud
-      uses: google-github-actions/setup-gcloud@v1
+    - name: Setup gcloud CLI
+      uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ env.PROJECT_ID }}
         install_components: "beta"
 
     # -------------------------------------------------------------
-    # 4) Build con Cloud Build (sin streaming)
+    # 4) Build con Cloud Build (acción oficial)
     # -------------------------------------------------------------
-    - name: Build with Cloud Build
-      uses: google-github-actions/cloud-build@v0
+    - name: Run Cloud Build
+      uses: google-github-actions/cloud-build@v1
       with:
         project_id: ${{ env.PROJECT_ID }}
         config: cloudbuild.yaml
