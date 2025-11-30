@@ -1,0 +1,57 @@
+name: Deploy Backend to Cloud Run
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  PROJECT_ID: "entregas-476319"
+  REGION: "southamerica-east1"
+  REPO: "entregas-repo"
+  SERVICE: "bot-entregas"
+  IMAGE: "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/backend-v1"
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - name: Configure Artifact Registry
+        run: |
+          gcloud artifacts repositories create $REPO \
+            --repository-format=docker \
+            --location=$REGION || true
+
+      - name: Build & Push Image
+        run: |
+          gcloud builds submit --tag $IMAGE
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE \
+            --image $IMAGE \
+            --platform=managed \
+            --region=$REGION \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=1Gi \
+            --cpu=1 \
+            --timeout=300
+
+      - name: Print Service URL
+        run: |
+          URL=$(gcloud run services describe $SERVICE --region=$REGION --format="value(status.url)")
+          echo "### URL FINAL DEL BACKEND: $URL" >> $GITHUB_STEP_SUMMARY
+          echo "Deploy completado correctamente."
