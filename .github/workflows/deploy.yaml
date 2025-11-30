@@ -6,11 +6,10 @@ on:
       - main
 
 env:
-  PROJECT_ID: entregas-476319
-  REGION: southamerica-east1
-  REPO: entregas-repo
-  SERVICE: bot-entregas
-  IMAGE: "southamerica-east1-docker.pkg.dev/entregas-476319/entregas-repo/backend-v1"
+  PROJECT_ID: "entregas-476319"
+  REGION: "southamerica-east1"
+  REPO: "entregas-repo"
+  SERVICE: "bot-entregas"
 
 jobs:
   deploy:
@@ -18,46 +17,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # -------------------------------------------------------------
-    # 1) Checkout del código
-    # -------------------------------------------------------------
-    - name: Checkout
-      uses: actions/checkout@v3
+      # 1) Checkout del código
+      - name: Checkout
+        uses: actions/checkout@v3
 
-    # -------------------------------------------------------------
-    # 2) Autenticación con Google Cloud
-    # -------------------------------------------------------------
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      # 2) Autenticación con Google Cloud
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    # -------------------------------------------------------------
-    # 3) Setup gcloud
-    # -------------------------------------------------------------
-    - name: Setup gcloud CLI
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: ${{ env.PROJECT_ID }}
-        install_components: "beta"
+      # 3) Setup gcloud CLI
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
-    # -------------------------------------------------------------
-    # 4) Build con Cloud Build (acción oficial)
-    # -------------------------------------------------------------
-    - name: Run Cloud Build
-      uses: google-github-actions/cloud-build@v1
-      with:
-        project_id: ${{ env.PROJECT_ID }}
-        config: cloudbuild.yaml
+      # 4) Crear repositorio de Artifact Registry (idempotente)
+      - name: Ensure Artifact Registry repo exists
+        run: |
+          gcloud artifacts repositories create "$REPO" \
+            --repository-format=docker \
+            --location="$REGION" || true
 
-    # -------------------------------------------------------------
-    # 5) Deploy a Cloud Run
-    # -------------------------------------------------------------
-    - name: Deploy to Cloud Run
-      run: |
-        gcloud run deploy $SERVICE \
-          --image "$IMAGE" \
-          --region "$REGION" \
-          --platform managed \
-          --port 8080 \
-          --allow-unauthenticated
+      # 5) Build con Cloud Build usando cloudbuild.yaml
+      - name: Build image with Cloud Build
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend-v1"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          gcloud builds submit \
+            --config=cloudbuild.yaml \
+            --project="$PROJECT_ID"
+
+      # 6) Deploy a Cloud Run
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --platform=managed \
+            --port=8080 \
+            --allow-unauthenticated
+
+      # 7) Mostrar URL final
+      - name: Print Service URL
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --format="value(status.url)")
+          echo "### URL FINAL DEL BACKEND: $URL" >> $GITHUB_STEP_SUMMARY
+          echo "URL del servicio: $URL"
