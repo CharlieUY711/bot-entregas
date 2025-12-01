@@ -24,32 +24,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Autenticación usando Workload Identity Federation
+      # Autenticación con Google Cloud
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: "projects/232664136135/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider"
           service_account: "entregas-cicd@entregas-476319.iam.gserviceaccount.com"
 
-      # 2. Instalar gcloud
+      # Instalar gcloud
       - name: Install Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      # 3. Habilitar Cloud Build (por si no está habilitado)
-      - name: Enable Cloud Build
-        run: |
-          gcloud services enable cloudbuild.googleapis.com
-
-      # 4. Build & Push a Artifact Registry
+      # Build & Push a Artifact Registry
       - name: Build and Push Docker image
         run: |
           gcloud builds submit \
             --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME} \
             .
 
-      # 5. Deploy a Cloud Run
+      # Deploy a Cloud Run
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
@@ -58,7 +53,7 @@ jobs:
             --platform=managed \
             --allow-unauthenticated
 
-      # 6. Mostrar URL final del servicio
+      # Mostrar la URL del servicio
       - name: Display service URL
         run: |
           gcloud run services describe $SERVICE_NAME \
