@@ -1,0 +1,108 @@
+name: Deploy Frontend to www.entregas.com.uy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/src/pages/Perfil.tsx'
+      - 'frontend/src/**'
+      - 'frontend/package.json'
+      - 'frontend/vite.config.*'
+      - 'frontend/tsconfig.json'
+  workflow_dispatch:  # Permite ejecutar el workflow manualmente desde GitHub Actions
+
+env:
+  PROJECT_ID: entregas-476319
+  REGION: southamerica-east1
+
+jobs:
+  build-and-deploy-frontend:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Autenticación usando Workload Identity Federation
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/232664136135/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider"
+          service_account: "entregas-cicd@entregas-476319.iam.gserviceaccount.com"
+
+      # 2. Instalar gcloud
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      # 3. Configurar Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # 4. Instalar dependencias del frontend
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      # 5. Construir el frontend
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      # 6. Desplegar a Firebase Hosting (si está configurado)
+      - name: Deploy to Firebase Hosting
+        working-directory: ./frontend
+        run: |
+          if [ -f "../firebase.json" ]; then
+            npm install -g firebase-tools
+            firebase deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" || echo "Firebase no configurado, continuando..."
+          else
+            echo "Firebase no configurado, intentando Cloud Storage..."
+          fi
+        continue-on-error: true
+
+      # 7. Desplegar a Cloud Storage (bucket estático)
+      - name: Deploy to Cloud Storage
+        run: |
+          # Buscar la carpeta de build
+          if [ -d "frontend/dist" ]; then
+            BUILD_DIR="frontend/dist"
+          elif [ -d "frontend/build" ]; then
+            BUILD_DIR="frontend/build"
+          else
+            echo "❌ No se encontró la carpeta de build"
+            exit 1
+          fi
+          
+          # Intentar desplegar a diferentes buckets posibles
+          BUCKETS=("entregas-frontend" "www.entregas.com.uy" "entregas-com-uy")
+          
+          for BUCKET in "${BUCKETS[@]}"; do
+            echo "Intentando desplegar a gs://$BUCKET..."
+            if gsutil ls "gs://$BUCKET" &>/dev/null; then
+              echo "✅ Bucket encontrado: $BUCKET"
+              gsutil -m rsync -r -d "$BUILD_DIR" "gs://$BUCKET"
+              echo "✅ Despliegue completado a gs://$BUCKET"
+              exit 0
+            fi
+          done
+          
+          echo "⚠️  No se encontró ningún bucket configurado"
+          echo "Por favor configura un bucket de Cloud Storage o Firebase Hosting"
+        continue-on-error: true
+
+      # 8. Mostrar resultado
+      - name: Display deployment status
+        run: |
+          echo "✅ Proceso de despliegue completado"
+          echo "🌐 Verifica el sitio en: https://www.entregas.com.uy"

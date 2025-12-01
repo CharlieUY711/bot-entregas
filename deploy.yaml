@@ -1,0 +1,76 @@
+name: Deploy Backend to Cloud Run
+
+# NOTA: Si este workflow falla con errores de permisos, ejecuta el script:
+# scripts/configurar-permisos-cicd.ps1
+# Este script otorga los roles necesarios (run.admin, storage.admin, etc.) 
+# a la cuenta de servicio entregas-cicd@entregas-476319.iam.gserviceaccount.com
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Permite ejecutar el workflow manualmente desde GitHub Actions
+
+env:
+  PROJECT_ID: entregas-476319
+  REGION: southamerica-east1
+  SERVICE_NAME: bot-entregas
+  REPO_NAME: entregas-repo
+  IMAGE_NAME: backend-v1
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Autenticación con Google Cloud
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/232664136135/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider"
+          service_account: "entregas-cicd@entregas-476319.iam.gserviceaccount.com"
+
+      # Instalar gcloud
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      # Build & Push a Artifact Registry
+      - name: Build and Push Docker image
+        run: |
+          gcloud builds submit \
+            --tag ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }} \
+            .
+
+      # Deploy a Cloud Run
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }} \
+            --region=${{ env.REGION }} \
+            --platform=managed \
+            --allow-unauthenticated || {
+            echo "❌ Error en el despliegue. Si es un error de permisos, ejecuta:"
+            echo "   scripts/configurar-permisos-cicd.ps1"
+            echo ""
+            echo "O manualmente ejecuta:"
+            echo "   gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \\"
+            echo "     --member='serviceAccount:entregas-cicd@entregas-476319.iam.gserviceaccount.com' \\"
+            echo "     --role='roles/run.admin'"
+            exit 1
+          }
+
+      # Mostrar la URL del servicio
+      - name: Display service URL
+        run: |
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)"
