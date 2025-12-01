@@ -6,62 +6,61 @@ on:
       - main
 
 env:
-  PROJECT_ID: "entregas-476319"
-  REGION: "southamerica-east1"
-  REPO: "entregas-repo"
-  SERVICE: "bot-entregas"
+  PROJECT_ID: entregas-476319
+  REGION: southamerica-east1
+  SERVICE_NAME: bot-entregas
+  REPO_NAME: entregas-repo
+  IMAGE_NAME: backend-v1
 
 jobs:
-  deploy:
-    name: Build & Deploy
+  build-and-deploy:
     runs-on: ubuntu-latest
 
-    steps:
-      # 1) Checkout del código
-      - name: Checkout
-        uses: actions/checkout@v3
+    permissions:
+      id-token: write
+      contents: read
 
-      # 2) Autenticación con Google Cloud
-      - name: Authenticate to Google Cloud
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Autenticación usando Workload Identity Federation
+      - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: "projects/232664136135/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider"
+          service_account: "entregas-cicd@entregas-476319.iam.gserviceaccount.com"
 
-      # 3) Setup gcloud CLI
-      - name: Setup gcloud
+      # 2. Instalar gcloud
+      - name: Install Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      # 4) Crear repositorio de Artifact Registry (idempotente)
-      - name: Ensure Artifact Registry repo exists
+      # 3. Habilitar Cloud Build (por si no está habilitado)
+      - name: Enable Cloud Build
         run: |
-          gcloud artifacts repositories create "$REPO" \
-            --repository-format=docker \
-            --location="$REGION" || true
+          gcloud services enable cloudbuild.googleapis.com
 
-      # 5) Build con Cloud Build usando cloudbuild.yaml
-      - name: Build image with Cloud Build
+      # 4. Build & Push a Artifact Registry
+      - name: Build and Push Docker image
         run: |
-          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend-v1"
-          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
           gcloud builds submit \
-            --config=cloudbuild.yaml \
-            --project="$PROJECT_ID"
+            --tag ${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME} \
+            .
 
-      # 6) Deploy a Cloud Run
+      # 5. Deploy a Cloud Run
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy "$SERVICE" \
-            --image "$IMAGE" \
-            --region "$REGION" \
+          gcloud run deploy $SERVICE_NAME \
+            --image=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME} \
+            --region=$REGION \
             --platform=managed \
-            --port=8080 \
             --allow-unauthenticated
 
-      # 7) Mostrar URL final
-      - name: Print Service URL
+      # 6. Mostrar URL final del servicio
+      - name: Display service URL
         run: |
-          URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --format="value(status.url)")
-          echo "### URL FINAL DEL BACKEND: $URL" >> $GITHUB_STEP_SUMMARY
-          echo "URL del servicio: $URL"
+          gcloud run services describe $SERVICE_NAME \
+            --region=$REGION \
+            --format="value(status.url)"
